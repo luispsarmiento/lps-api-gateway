@@ -66,9 +66,9 @@ async fn send_request(uri: String, req: HttpRequest, mut payload: web::Payload) 
     let _body = Body::from(Bytes::from(body));
 
     let res = client.request(_method, uri)
-                                            .header("X-Custom-Header", "Mt API Gateway")
-                                            .body(_body)
-                                            .send().await;
+                    .header("X-Custom-Header", "Mt API Gateway")
+                    .body(_body)
+                    .send().await;
 
     let body_bytes = res.expect("Internal service error").text().await.unwrap().to_string().into_bytes();
 
@@ -153,7 +153,7 @@ async fn main() -> std::io::Result<()> {
     };
     
     HttpServer::new(app)
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 8080))?
     .run()
     .await
 }
