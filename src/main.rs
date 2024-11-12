@@ -1,16 +1,21 @@
 use std::{any, sync::{Arc, RwLock}};
 
-use actix_web::{dev::AppService, web::{self, Data}, App, HttpRequest, HttpResponse, HttpServer, Resource};
+use actix_web::{web::{self, Data}, App, HttpRequest, HttpResponse, HttpServer, Resource};
 use bytes::Bytes;
 use reqwest::{Body, Method};
 use futures::stream::StreamExt;
-use futures::Future;
 
 use dotenv::dotenv;
+use serde_derive::Deserialize;
+
+use std::future::Future;
+use std::pin::Pin;
+
+type AsyncFn = fn(HttpRequest) -> Pin<Box<dyn Future<Output = Result<(), HttpResponse>>>>;
 
 #[derive(Clone)]
 struct Filter {
-    filters: Arc<RwLock<Vec<fn(_req: HttpRequest) -> Result<(), HttpResponse>>>>
+    filters: Arc<RwLock<Vec<AsyncFn>>>
 }
 
 impl Filter {
@@ -20,19 +25,19 @@ impl Filter {
         }
     }
 
-    fn add(&self, filter: fn(_req: HttpRequest) -> Result<(), HttpResponse>) -> Self {
+    fn add(&self, filter: AsyncFn) -> Self {
         let mut filters = self.filters.write().unwrap();
         filters.push(filter);
 
         self.clone() 
     }
 
-    fn run(&self, _req: &HttpRequest) -> Result<bool, HttpResponse> {
+    async fn run(&self, _req: &HttpRequest) -> Result<bool, HttpResponse> {
         let mut filters = self.filters.write().unwrap();
         for filter in filters.iter() {
             let cloned_req = _req.clone();
             
-            if let Err(response) = filter(cloned_req) {
+            if let Err(response) = Box::pin(filter(cloned_req)).await {
                 return Err(response);
             }
         }
@@ -40,7 +45,7 @@ impl Filter {
     }
 }
 
-fn default_filter(_req: HttpRequest) -> Result<(), HttpResponse> {
+async fn default_filter(_req: HttpRequest) -> Result<(), HttpResponse> {
     return Ok(())
 }
 
@@ -86,7 +91,7 @@ async fn handle_request(_req: HttpRequest, mut payload: web::Payload, filters: w
     let service_name = std::env::var("PRINCIPAL_SERVICE_NAME").expect("PRINCIPAL_SERVICE_NAME must be set.");
     let service_address = std::env::var("PRINCIPAL_SERVICE_ADDRESS").expect("PRINCIPAL_SERVICE_NAME must be set.");
 
-    let _ = match filters.run(&_req.clone()) {
+    let _ = match filters.run(&_req.clone()).await {
         Ok(valid) => valid,
         Err(err) => {
             return err
@@ -130,7 +135,7 @@ impl APIGateway {
         dotenv().ok();
 
         let filters = Filter::new();
-        filters.add(default_filter);
+        filters.add(|req: HttpRequest| Box::pin(default_filter(req)));
 
         APIGateway {
             filters: Arc::new(filters),
@@ -144,16 +149,41 @@ impl APIGateway {
     }
 }
 
+#[derive(Deserialize, Debug)]
+struct SiteverifyResponse {
+    success: bool,
+}
+
+async fn recaptcha_siteverify(_req: HttpRequest) -> Result<(), HttpResponse> {
+    let grr = _req.headers().get("x-g-recaptcha-response").expect("Some wrong").to_str().unwrap().to_string();
+    let g_recaptcha_secret = std::env::var("G_RECAPTCHA_SECRET").expect("G_RECAPTCHA_SECRET must be set.");
+
+    let params = [("response", grr), ("secret", g_recaptcha_secret)];
+    let client = reqwest::Client::new();
+
+    let res = client.post("https://www.google.com/recaptcha/api/siteverify")
+                    .form(&params)
+                    .send().await.unwrap().json::<SiteverifyResponse>().await.unwrap();
+
+    if res.success {
+        return Ok(())
+    } else {
+        return Err(HttpResponse::Unauthorized().body("Captcha hasn't validated"));
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let api_gateway = APIGateway::new();
+
+    api_gateway.filters.add(|req: HttpRequest| Box::pin(recaptcha_siteverify(req)));
     
     let app = move || {
         App::new().service(api_gateway.resource_service_uri())
     };
     
     HttpServer::new(app)
-    .bind(("0.0.0.0", 8080))?
+    .bind(("127.0.0.1", 8080))?
     .run()
     .await
 }
