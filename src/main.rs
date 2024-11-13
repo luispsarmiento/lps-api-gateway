@@ -90,13 +90,6 @@ async fn send_request(uri: String, req: HttpRequest, mut payload: web::Payload) 
 async fn handle_request(_req: HttpRequest, mut payload: web::Payload, filters: web::Data<Arc<Filter>>) -> HttpResponse {
     let service_name = std::env::var("PRINCIPAL_SERVICE_NAME").expect("PRINCIPAL_SERVICE_NAME must be set.");
     let service_address = std::env::var("PRINCIPAL_SERVICE_ADDRESS").expect("PRINCIPAL_SERVICE_NAME must be set.");
-
-    let _ = match filters.run(&_req.clone()).await {
-        Ok(valid) => valid,
-        Err(err) => {
-            return err
-        }
-    };
     
     let path = _req.path().to_string();
     let parts: Vec<&str> = path.split('/').collect();
@@ -117,6 +110,13 @@ async fn handle_request(_req: HttpRequest, mut payload: web::Payload, filters: w
         address = format!("https://{}", address);
     }
     let forward_uri = format!("{}{}", address, _req.uri().path_and_query().map_or("", |x| x.as_str()));
+
+    let _ = match filters.run(&_req.clone()).await {
+        Ok(valid) => valid,
+        Err(err) => {
+            return err
+        }
+    };
 
     if let Ok(uri) = forward_uri.parse() {
         return send_request(uri, _req, payload).await;
