@@ -23,7 +23,7 @@ stages:
     - task: Docker@2
       inputs:
         containerRegistry: 'DockerHubConnection'
-        repository: 'luispuc/lpsapigateway:$(tag)'
+        repository: 'luispuc/lpsapigateway'
         command: 'buildAndPush'
         Dockerfile: '**/Dockerfile'
         tags: '$(tag)'
