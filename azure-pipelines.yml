@@ -12,10 +12,10 @@ variables:
   tag: 'latest'
 
 stages:
-- stage: Build and Push
+- stage: Build_and_Push
   displayName: Build and Push image
   jobs:
-  - job: Build And Push
+  - job: Build_And_Push
     displayName: Build and Push
     pool:
       vmImage: ubuntu-latest
