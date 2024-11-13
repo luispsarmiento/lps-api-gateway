@@ -21,15 +21,9 @@ stages:
       vmImage: ubuntu-latest
     steps:
     - task: Docker@2
-      displayName: Build an image
-      inputs:
-        command: 'build'
-        Dockerfile: '**/Dockerfile'
-        tags: '$(tag)'
-    - task: Docker@2
-      displayName: Push an image
       inputs:
         containerRegistry: 'DockerHubConnection'
-        repository: 'luispuc/lpsapigateway'
-        command: 'push'
+        repository: 'luispuc/lpsapigateway:$(tag)'
+        command: 'buildAndPush'
+        Dockerfile: '**/Dockerfile'
         tags: '$(tag)'
